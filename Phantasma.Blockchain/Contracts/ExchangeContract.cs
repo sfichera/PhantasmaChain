@@ -20,6 +20,7 @@ namespace Phantasma.Blockchain.Contracts
 
     public enum ExchangeOrderType
     {
+        OTC,
         Limit,              //normal limit order
         ImmediateOrCancel,  //special limit order, any unfulfilled part of the order gets cancelled if not immediately fulfilled
         Market,             //normal market order
@@ -164,8 +165,6 @@ namespace Phantasma.Blockchain.Contracts
         {
             Runtime.Expect(Runtime.IsWitness(from), "invalid witness");
 
-            Runtime.Expect(Runtime.GasTarget == provider, "invalid gas target");
-
             Runtime.Expect(baseSymbol != quoteSymbol, "invalid base/quote pair");
 
             Runtime.Expect(Runtime.TokenExists(baseSymbol), "invalid base token");
@@ -175,6 +174,15 @@ namespace Phantasma.Blockchain.Contracts
             Runtime.Expect(Runtime.TokenExists(quoteSymbol), "invalid quote token");
             var quoteToken = Runtime.GetToken(quoteSymbol);
             Runtime.Expect(quoteToken.Flags.HasFlag(TokenFlags.Fungible), "token must be fungible");
+
+            if (orderType == ExchangeOrderType.OTC)
+            {
+                Runtime.Expect(side == ExchangeOrderSide.Sell, "otc order must be sell");
+                CreateOTC(from, baseSymbol, quoteSymbol, orderSize, price);
+                return;
+            }
+
+            Runtime.Expect(Runtime.GasTarget == provider, "invalid gas target");
 
             if (orderType != Market)
             {
@@ -380,6 +388,11 @@ namespace Phantasma.Blockchain.Contracts
             OpenOrder(from, provider, baseSymbol, quoteSymbol, side, IoC ? ImmediateOrCancel : Limit, orderSize, price);
         }
 
+        public void OpenOTCOrder(Address from, Address provider, string baseSymbol, string quoteSymbol, BigInteger ammount, BigInteger price)
+        {
+            OpenOrder(from, provider, baseSymbol, quoteSymbol, ExchangeOrderSide.Sell, ExchangeOrderType.OTC, ammount, price);
+        }
+
         public void CancelOrder(BigInteger uid)
         {
             Runtime.Expect(_orderMap.ContainsKey<BigInteger>(uid), "order not found");
@@ -507,7 +520,41 @@ namespace Phantasma.Blockchain.Contracts
         }
 
         #region OTC TRADES
-        public void SwapTokens(Address buyer, Address seller, string baseSymbol, string quoteSymbol, BigInteger amount, BigInteger price, byte[] signature)
+        internal StorageList _otcBook;
+
+        public ExchangeOrder[] GetOTC()
+        {
+            return _otcBook.All<ExchangeOrder>();
+        }
+
+        private void CreateOTC(Address from, string baseSymbol, string quoteSymbol, BigInteger amount, BigInteger price)
+        {
+            var uid = Runtime.GenerateUID();
+
+            var order = new ExchangeOrder(uid, Runtime.Time, from, this.Address, amount, baseSymbol, price, quoteSymbol, ExchangeOrderSide.Sell, ExchangeOrderType.OTC);
+            _otcBook.Add<ExchangeOrder>(order);
+        }
+
+        public void TakeOrder(Address from, BigInteger uid)
+        {
+            Runtime.Expect(Runtime.IsWitness(from), "invalid witness");
+
+            var count = _otcBook.Count();
+            for (int i=0; i<count; i++)
+            {
+                var order = _otcBook.Get<ExchangeOrder>(i);
+                if (order.Uid == uid)
+                {
+                    throw new NotImplementedException();
+
+                    return;
+                }
+            }
+
+            Runtime.Expect(false, "order not found");
+        }
+
+        /*public void SwapTokens(Address buyer, Address seller, string baseSymbol, string quoteSymbol, BigInteger amount, BigInteger price, byte[] signature)
         {
             Runtime.Expect(Runtime.IsWitness(buyer), "invalid witness");
             Runtime.Expect(seller != buyer, "invalid seller");
@@ -584,7 +631,7 @@ namespace Phantasma.Blockchain.Contracts
 
             Runtime.TransferTokens(quoteSymbol, buyer, owner, price);
             Runtime.TransferToken(baseSymbol, owner, buyer, tokenID);
-        }
+        }*/
         #endregion
     }
 }

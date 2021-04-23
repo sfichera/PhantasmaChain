@@ -691,7 +691,7 @@ namespace Phantasma.Blockchain
             var supply = new SupplySheet(token.Symbol, Runtime.Chain, this);
             Runtime.Expect(supply.Mint(Runtime.Storage, amount, token.MaxSupply), "mint supply failed");
 
-            var balances = new BalanceSheet(token.Symbol);
+            var balances = new BalanceSheet(token);
             Runtime.Expect(balances.Add(Runtime.Storage, destination, amount), "balance add failed");
 
             var tokenTrigger = isSettlement ? TokenTrigger.OnReceive : TokenTrigger.OnMint;
@@ -751,17 +751,35 @@ namespace Phantasma.Blockchain
             return $".burned.{symbol}";
         }
 
-        private void UpdateBurnedSupply(StorageContext storage, string symbol, BigInteger burnAmount)
+        private void Internal_UpdateBurnedSupply(StorageContext storage, string burnKey, BigInteger burnAmount)
         {
-            var burnKey = GetBurnKey(symbol);
             var burnedSupply = storage.Has(burnKey) ? storage.Get<BigInteger>(burnKey) : 0;
             burnedSupply += burnAmount;
             storage.Put<BigInteger>(burnKey, burnedSupply);
         }
 
+        private void UpdateBurnedSupply(StorageContext storage, string symbol, BigInteger burnAmount)
+        {
+            var burnKey = GetBurnKey(symbol);
+            Internal_UpdateBurnedSupply(storage, burnKey, burnAmount);
+        }
+
+        private void UpdateBurnedSupplyForSeries(StorageContext storage, string symbol, BigInteger burnAmount, BigInteger seriesID)
+        {
+            var burnKey = GetBurnKey($"{symbol}.{seriesID}");
+            Internal_UpdateBurnedSupply(storage, burnKey, burnAmount);
+        }
+
         public BigInteger GetBurnedTokenSupply(StorageContext storage, string symbol)
         {
             var burnKey = GetBurnKey(symbol);
+            var burnedSupply = storage.Has(burnKey) ? storage.Get<BigInteger>(burnKey) : 0;
+            return burnedSupply;
+        }
+
+        public BigInteger GetBurnedTokenSupplyForSeries(StorageContext storage, string symbol, BigInteger seriesID)
+        {
+            var burnKey = GetBurnKey($"{symbol}.{seriesID}");
             var burnedSupply = storage.Has(burnKey) ? storage.Get<BigInteger>(burnKey) : 0;
             return burnedSupply;
         }
@@ -787,7 +805,7 @@ namespace Phantasma.Blockchain
 
             Runtime.Expect(supply.Burn(Runtime.Storage, amount), $"{token.Symbol} burn failed");
 
-            var balances = new BalanceSheet(token.Symbol);
+            var balances = new BalanceSheet(token);
             Runtime.Expect(balances.Subtract(Runtime.Storage, source, amount), $"{token.Symbol} balance subtract failed from {source.Text}");
 
             Runtime.Expect(Runtime.InvokeTriggerOnToken(true, token, isSettlement ? TokenTrigger.OnSend : TokenTrigger.OnBurn, source, destination, token.Symbol, amount) != TriggerResult.Failure, "token trigger failed");
@@ -851,6 +869,7 @@ namespace Phantasma.Blockchain
             else
             {
                 UpdateBurnedSupply(Runtime.Storage, token.Symbol, 1);
+                UpdateBurnedSupplyForSeries(Runtime.Storage, token.Symbol, 1, nft.SeriesID);
                 Runtime.Notify(EventKind.TokenBurn, source, new TokenEventData(token.Symbol, tokenID, Runtime.Chain.Name));
             }
         }
@@ -938,7 +957,7 @@ namespace Phantasma.Blockchain
 
             Runtime.Expect(allowed, "invalid witness or allowance");
 
-            var balances = new BalanceSheet(token.Symbol);
+            var balances = new BalanceSheet(token);
             Runtime.Expect(balances.Subtract(Runtime.Storage, source, amount), $"{token.Symbol} balance subtract failed from {source.Text}");
             Runtime.Expect(balances.Add(Runtime.Storage, destination, amount), $"{token.Symbol} balance add failed to {destination.Text}");
 

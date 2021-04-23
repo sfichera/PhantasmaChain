@@ -84,7 +84,8 @@ namespace Phantasma.Blockchain.Contracts
             if (maxAmount > balance)
             {
                 var diff = maxAmount - balance;
-                throw new BalanceException("KCAL", from, diff);
+                var fuelToken = Runtime.GetToken(DomainSettings.FuelTokenSymbol);
+                throw new BalanceException(fuelToken, from, diff);
             }
 
             Runtime.Expect(balance >= maxAmount, $"not enough {DomainSettings.FuelTokenSymbol} {balance} in address {from} {maxAmount}");
@@ -138,7 +139,16 @@ namespace Phantasma.Blockchain.Contracts
 
                 var rewardFuel = _rewardAccum / rewardList.Count;
 
-                var stakeAmount = UnitConversion.ToBigInteger(1, DomainSettings.StakingTokenDecimals);
+                BigInteger stakeAmount;
+
+                if (Runtime.ProtocolVersion > 5)
+                {
+                    stakeAmount = UnitConversion.ToBigInteger(2, DomainSettings.StakingTokenDecimals);
+                }
+                else
+                {
+                    stakeAmount = UnitConversion.ToBigInteger(1, DomainSettings.StakingTokenDecimals);
+                }
 
                 Runtime.MintTokens(DomainSettings.StakingTokenSymbol, this.Address, this.Address, rewardAmount);
 
