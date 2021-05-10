@@ -564,7 +564,7 @@ namespace Phantasma.API
                     {
                         if (method.IsProperty())
                         {
-                            NFTUtils.FetchProperty(chain, method.name, series, ID, (propName, propValue) =>
+                            Blockchain.Tokens.TokenUtils.FetchProperty(Nexus.RootStorage, chain, method.name, series, ID, (propName, propValue) =>
                             {
                                 properties.Add(new TokenPropertyResult() { Key = propName, Value = propValue.AsString() });
                             });
@@ -1541,6 +1541,7 @@ namespace Phantasma.API
             return new NexusResult()
             {
                 name = Nexus.Name,
+                protocol = Nexus.GetProtocolVersion(Nexus.RootStorage),
                 tokens = tokenList.ToArray(),
                 platforms = platformList.ToArray(),
                 chains = chainList.ToArray(),
