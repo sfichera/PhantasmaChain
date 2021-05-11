@@ -163,6 +163,7 @@ namespace Phantasma.Simulator
 
                 EndBlock();
 
+
                 //TODO add SOUL/KCAL on ethereum, removed for now because hash is not fixed yet
                 //BeginBlock();
                 //GenerateCustomTransaction(_owner, ProofOfWork.Minimal, () =>
