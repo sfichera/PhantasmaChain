@@ -599,8 +599,21 @@ namespace Phantasma.VM
             return this;
         }
 
+        internal static void ValidateStructKey(VMObject key)
+        {
+            if (key.Type == VMType.None || key.Type == VMType.Struct || key.Type == VMType.Object)
+            {
+                throw new Exception($"Cannot use value of type {key.Type} as key for struct field");
+            }
+        }
+
         public VMObject SetValue(Dictionary<VMObject, VMObject> children)
         {
+            foreach (var key in children.Keys)
+            {
+                ValidateStructKey(key);
+            }
+
             this.Type = VMType.Struct;
             this.Data = children;
             this._localSize = 4; // TODO not valid
@@ -680,6 +693,8 @@ namespace Phantasma.VM
 
         public void SetKey(VMObject key, VMObject obj)
         {
+            ValidateStructKey(key);
+
             Dictionary<VMObject, VMObject> children;
 
             // NOTE: here we need to instantiate the key as new object
@@ -745,7 +760,7 @@ namespace Phantasma.VM
                         }
                     }
 
-                default: return Data.GetHashCode(); // TODO is this ok for all cases?
+                default: return Data != null ? Data.GetHashCode() : 0; // TODO is this ok for all cases?
 
             }
         }
@@ -803,6 +818,11 @@ namespace Phantasma.VM
             }
             else
             {
+                if (this.Data == null)
+                {
+                    return other.Data == null;
+                }
+
                 return this.Data.Equals(other.Data);
             }
         }
@@ -1136,11 +1156,20 @@ namespace Phantasma.VM
 
             object boxed = result;
             foreach (var field in fields)
-            {
+            {                
                 var key = VMObject.FromObject(field.Name);
-                Throw.If(!dict.ContainsKey(key), "field not present in source struct: " + field.Name);
-                var val = dict[key].ToObject(field.FieldType);
 
+                object val;
+                if (dict.ContainsKey(key))
+                {
+                    val = dict[key].ToObject(field.FieldType);
+                }
+                else
+                {
+                    Throw.If(!field.FieldType.IsStructOrClass() , "field not present in source struct: " + field.Name);
+                    val = null;
+                }
+                                
                 // here we check if the types mismatch
                 // in case of getting a byte[] instead of an object, we try unserializing the bytes in a different approach
                 // NOTE this should not be necessary often, but is already getting into black magic territory...
@@ -1220,6 +1249,8 @@ namespace Phantasma.VM
                         {
                             var key = new VMObject();
                             key.SetValue(field.Name);
+                            ValidateStructKey(key);
+
                             var val = field.GetValue(srcObj);
                             var vmVal = CastViaReflection(val, level + 1, true);
                             children[key] = vmVal;
@@ -1251,34 +1282,56 @@ namespace Phantasma.VM
 
             var dataType = this.Data.GetType();
 
-            if (this.Type == VMType.Struct)
+            switch (this.Type)
             {
-                var children = this.GetChildren();
-                writer.WriteVarInt(children.Count);
-                foreach (var entry in children)
-                {
-                    entry.Key.SerializeData(writer);
-                    entry.Value.SerializeData(writer);
-                }
-            }
-            else
-            if (this.Type == VMType.Object)
-            {
-                var obj = this.Data as ISerializable;
+                case VMType.Struct:
+                    {
+                        var children = this.GetChildren();
+                        writer.WriteVarInt(children.Count);
+                        foreach (var entry in children)
+                        {
+                            entry.Key.SerializeData(writer);
+                            entry.Value.SerializeData(writer);
+                        }
+                        break;
+                    }
 
-                if (obj != null)
-                {
-                    var bytes = Serialization.Serialize(obj);
-                    writer.WriteByteArray(bytes);
-                }
-                else
-                {
-                    throw new Exception($"Objects of type {dataType.Name} cannot be serialized");
-                }
-            }
-            else
-            {
-                Serialization.Serialize(writer, this.Data);
+                case VMType.Object:
+                    {
+                        var obj = this.Data as ISerializable;
+
+                        if (obj != null)
+                        {
+                            var bytes = Serialization.Serialize(obj);
+                            writer.WriteByteArray(bytes);
+                        }
+                        else
+                        {
+                            throw new Exception($"Objects of type {dataType.Name} cannot be serialized");
+                        }
+
+                        break;
+                    }
+
+                case VMType.Enum:
+                    uint temp2;
+
+                    if (this.Data is Enum)
+                    {
+                        var temp1 = (Enum)this.Data;
+                        temp2 = uint.Parse(temp1.ToString("d"));
+                    }
+                    else
+                    {
+                        temp2 = (uint)this.Data;
+                    }
+
+                    writer.WriteVarInt(temp2);
+                    break;
+
+                default:
+                    Serialization.Serialize(writer, this.Data);
+                    break;
             }
         }
 
@@ -1337,6 +1390,8 @@ namespace Phantasma.VM
                     {
                         var key = new VMObject();
                         key.UnserializeData(reader);
+
+                        ValidateStructKey(key);
 
                         var val = new VMObject();
                         val.UnserializeData(reader);
